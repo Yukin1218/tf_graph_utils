@@ -144,3 +144,5 @@ def _handle_merge(node, G, pb_hash):
             for i, j in enumerate(out_node.input):
                 if j.split(':')[0] == node.name:
                     out_node.input[i] = in_tensor
+
+    return is_trivial
