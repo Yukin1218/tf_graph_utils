@@ -98,7 +98,8 @@ def remove_input_node(input_graph_def, input_node_name, keep_switch=0):
         if node_name not in hard_rm_list:
             output_graph_def.node.extend([copy.deepcopy(pb_hash[node_name])])
 
-    return output_graph_def
+    output_graph_def_ = rm_trivial_merge(output_graph_def)
+    return output_graph_def_
 
 def rm_const_input(graph_def):
     """In place remove Const op inputs
@@ -107,3 +108,39 @@ def rm_const_input(graph_def):
         if n.op == 'Const':
             if len(n.input):
                 n.ClearField('input')
+
+def rm_trivial_merge(graph_def):
+    """Remove trivial Merge op (with only one input)
+    """
+    G, pb_hash = pb2nx(graph_def)
+    output_graph_def = tf.GraphDef()
+
+    rm_list = []
+    for node in graph_def.node:
+        if node.op == 'Merge':
+            is_trivial = _handle_merge(node, G, pb_hash)
+            if is_trivial:
+                rm_list.append(node.name)
+
+    for n in pb_hash.keys():
+        if n not in rm_list:
+            output_graph_def.node.extend([copy.deepcopy(pb_hash[n])])
+
+    return output_graph_def
+
+def _handle_merge(node, G, pb_hash):
+    is_trivial = False
+    if len(node.input) == 1:
+        is_trivial = True
+        out_names = [x[1] for x in G.out_edges(node.name)]
+        in_tensor = node.input[0]
+        # check input merge
+        if pb_hash[in_tensor.split(':')[0]].op == 'Merge':
+            _handle_merge(pb_hash[in_tensor.split(':')[0]])
+            in_tensor = node.input[0]
+        for out_name in out_names:
+            out_node = pb_hash[out_name]
+            # find out_node node input
+            for i, j in enumerate(out_node.input):
+                if j.split(':')[0] == node.name:
+                    out_node.input[i] = in_tensor
